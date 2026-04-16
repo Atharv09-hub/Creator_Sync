@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, onSnapshot, query, deleteDoc, doc, where } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, deleteDoc, doc, where, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase'; 
-import { UploadCloud, Copy, Check, FileVideo, Dumbbell, Code, MonitorPlay, Trash2 } from 'lucide-react';
+import { UploadCloud, Copy, Check, FileVideo, Dumbbell, Code, MonitorPlay, Trash2, Download } from 'lucide-react';
 
 const CLOUD_NAME = "dsf2qfu5g";  
 const UPLOAD_PRESET = "my_react_app"; 
@@ -12,6 +12,7 @@ const MediaVault = ({ user }) => {
   const [uploadProgress, setUploadProgress] = useState({});
   const [mediaItems, setMediaItems] = useState([]);
   const [copiedId, setCopiedId] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -19,8 +20,16 @@ const MediaVault = ({ user }) => {
     const q = query(collection(db, "mediaVault"), where("userId", "==", user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      items.sort((a, b) => b.timestamp.seconds - a.timestamp.seconds);
+      items.sort((a, b) => {
+        const aTime = a.timestamp?.seconds ?? a.timestamp?.toDate?.()?.getTime?.() ?? 0;
+        const bTime = b.timestamp?.seconds ?? b.timestamp?.toDate?.()?.getTime?.() ?? 0;
+        return bTime - aTime;
+      });
       setMediaItems(items);
+      setLoadError('');
+    }, (error) => {
+      console.error('Media Vault listener failed:', error);
+      setLoadError('We could not load your vault. Please check Firestore rules and authentication.');
     });
     
     return () => unsubscribe();
@@ -47,24 +56,29 @@ const MediaVault = ({ user }) => {
 
       xhr.onload = async () => {
         if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          const downloadURL = response.secure_url;
-          
-          await addDoc(collection(db, "mediaVault"), {
-            name: file.name,
-            url: downloadURL,
-            size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-            category: category,
-            timestamp: new Date(),
-            userId: user.uid
-          });
-          
-          setUploadProgress(prev => {
-            const newProg = { ...prev };
-            delete newProg[file.name];
-            return newProg;
-          });
-          setFiles([]);
+          try {
+            const response = JSON.parse(xhr.responseText);
+            const downloadURL = response.secure_url;
+
+            await addDoc(collection(db, "mediaVault"), {
+              name: file.name,
+              url: downloadURL,
+              size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+              category: category,
+              timestamp: serverTimestamp(),
+              userId: user.uid
+            });
+
+            setUploadProgress(prev => {
+              const newProg = { ...prev };
+              delete newProg[file.name];
+              return newProg;
+            });
+            setFiles([]);
+          } catch (error) {
+            console.error("Firestore save failed", error);
+            setLoadError('Upload finished, but Firestore blocked the save. Check your live rules and userId field.');
+          }
         } else {
           console.error("Upload failed", xhr.responseText);
           alert("Upload failed. Please check your Cloudinary Preset name.");
@@ -87,11 +101,51 @@ const MediaVault = ({ user }) => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const getDownloadUrl = (url, fileName) => {
+    if (!url) return '';
+
+    const safeFileName = encodeURIComponent(fileName || 'download');
+    if (url.includes('/upload/')) {
+      return url.replace('/upload/', `/upload/fl_attachment:${safeFileName}/`);
+    }
+
+    return url;
+  };
+
+  const handleDownload = async (url, fileName) => {
+    if (!url) return;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Download failed');
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = fileName || 'download';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.warn('Blob download failed, opening Cloudinary attachment URL instead.', error);
+      const fallbackUrl = getDownloadUrl(url, fileName);
+      const link = document.createElement('a');
+      link.href = fallbackUrl;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+  };
+
   const getCategoryIcon = (cat) => {
     switch(cat) {
-      case 'Engineering': return <Code size={16} className="text-blue-400" />;
-      case 'Gym': return <Dumbbell size={16} className="text-green-400" />;
-      default: return <MonitorPlay size={16} className="text-purple-400" />;
+      case 'Engineering': return <Code size={16} className="text-[#ffc01e]" />;
+      case 'Gym': return <Dumbbell size={16} className="text-[#f97316]" />;
+      default: return <MonitorPlay size={16} className="text-[#ffc01e]" />;
     }
   };
 
@@ -102,11 +156,11 @@ const MediaVault = ({ user }) => {
         <p className="text-gray-400 mt-2 font-light">Secure, real-time footage bridge. Drop your raw files here.</p>
       </header>
 
-      <div className="bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-3xl p-8 mb-12 shadow-2xl">
+      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 mb-12 shadow-2xl">
         <div className="flex flex-col md:flex-row gap-6 items-center">
           
           <div className="flex-1 w-full">
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-600 border-dashed rounded-2xl cursor-pointer hover:bg-gray-700/30 hover:border-blue-400 transition-all">
+            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-600 border-dashed rounded-2xl cursor-pointer hover:bg-white/5 hover:border-[#f97316] transition-all">
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
                 <UploadCloud className="w-8 h-8 text-gray-400 mb-2" />
                 <p className="text-sm text-gray-400"><span className="font-semibold text-white">Click to select</span> or drag MP4/MOV files</p>
@@ -119,7 +173,7 @@ const MediaVault = ({ user }) => {
             <select 
               value={category} 
               onChange={(e) => setCategory(e.target.value)}
-              className="bg-gray-900/50 border border-gray-600 text-white text-sm rounded-xl block w-full p-3 outline-none focus:border-blue-400 transition-colors"
+              className="bg-[#111318]/70 border border-gray-600 text-white text-sm rounded-xl block w-full p-3 outline-none focus:border-[#f97316] transition-colors"
             >
               <option value="Vlog">Vlog & B-Roll</option>
               <option value="Gym">Gym / Form Check</option>
@@ -129,7 +183,7 @@ const MediaVault = ({ user }) => {
             <button 
               onClick={handleUpload}
               disabled={files.length === 0}
-              className="bg-white text-black hover:bg-gray-200 disabled:bg-gray-700 disabled:text-gray-500 font-medium rounded-xl text-sm px-5 py-3 text-center transition-all w-full"
+              className="bg-[#ffc01e] text-[#111318] hover:bg-[#ffcf54] disabled:bg-gray-700 disabled:text-gray-500 font-medium rounded-xl text-sm px-5 py-3 text-center transition-all w-full"
             >
               Upload {files.length > 0 ? `${files.length} File(s)` : ''}
             </button>
@@ -139,13 +193,13 @@ const MediaVault = ({ user }) => {
         {Object.keys(uploadProgress).length > 0 && (
           <div className="mt-6 space-y-3">
             {Object.entries(uploadProgress).map(([fileName, prog]) => (
-              <div key={fileName} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+              <div key={fileName} className="bg-[#111318]/70 rounded-lg p-3 border border-gray-700">
                 <div className="flex justify-between text-xs text-gray-400 mb-1">
                   <span className="truncate w-3/4">{fileName}</span>
                   <span>{prog}%</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-1.5">
-                  <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${prog}%` }}></div>
+                  <div className="bg-[#f97316] h-1.5 rounded-full transition-all duration-300" style={{ width: `${prog}%` }}></div>
                 </div>
               </div>
             ))}
@@ -154,9 +208,14 @@ const MediaVault = ({ user }) => {
       </div>
 
       <h3 className="text-xl font-medium text-white mb-6">Recent Footage</h3>
+      {loadError && (
+        <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {loadError}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {mediaItems.map((item) => (
-          <div key={item.id} className="group bg-gray-800/30 border border-gray-700/50 rounded-2xl p-4 hover:bg-gray-800/60 transition-all duration-300 relative">
+          <div key={item.id} className="group bg-white/5 border border-white/10 rounded-2xl p-4 hover:bg-white/10 transition-all duration-300 relative">
             <button 
               onClick={() => handleDelete(item.id)}
               className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-30"
@@ -187,6 +246,14 @@ const MediaVault = ({ user }) => {
                 title="Copy Video URL"
               >
                 {copiedId === item.id ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+              </button>
+
+              <button
+                onClick={() => handleDownload(item.url, item.name)}
+              className="bg-[#f97316]/80 hover:bg-[#f97316] p-2 rounded-lg text-white transition-colors ml-2"
+                title="Download Video"
+              >
+                <Download size={16} />
               </button>
             </div>
           </div>

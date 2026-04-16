@@ -1,16 +1,90 @@
-# React + Vite
+# CreatorSync
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+CreatorSync is a React + Vite app for planning content, tracking production, and managing scripts.
 
-Currently, two official plugins are available:
+## Local Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. Install dependencies:
 
-## React Compiler
+```bash
+npm install
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+2. Start the dev server:
 
-## Expanding the ESLint configuration
+```bash
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Backend API
+
+The script rewrite feature now runs through a backend API instead of calling OpenAI directly from the browser.
+
+The client calls `POST /api/rewrite`, and the server talks to OpenAI with the secret key.
+
+### 1. Set the server key
+
+Add one of these to your environment or `.env.local`:
+
+```env
+OPENAI_API_KEY=your_key_here
+```
+
+If you already have `VITE_OPENAI_API_KEY` in `.env.local`, the server will fall back to it during local development.
+
+### 2. Run locally
+
+Open two terminals:
+
+```powershell
+npm run server
+```
+
+```powershell
+npm run dev
+```
+
+Vite proxies `/api` to the backend on port `3001`.
+
+## Docker Deployment
+
+This project uses a single production container that serves both the React app and the backend API through the Node server.
+
+### 1. Build the image
+
+```bash
+docker build -t creatorsync .
+```
+
+### 2. Run the container
+
+```powershell
+docker run -d --name creatorsync-app -p 8080:3001 -e OPENAI_API_KEY=your_key_here creatorsync
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+### 3. Rebuild after changes
+
+```powershell
+docker build -t creatorsync .
+docker rm -f creatorsync-app
+docker run -d --name creatorsync-app -p 8080:3001 -e OPENAI_API_KEY=your_key_here creatorsync
+```
+
+## Important note
+
+The OpenAI key is now only used on the server. Do not put it in a public frontend-only environment variable anymore.
+
+## Firebase note
+
+The Media Vault and other per-user Firestore collections now expect authenticated reads and writes based on `userId`.
+After pulling this change, deploy the Firestore rules from `firestore.rules` to your Firebase project:
+
+```bash
+firebase deploy --only firestore:rules
+```

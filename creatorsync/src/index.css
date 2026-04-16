@@ -1,3 +1,34 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #111318;
+  --surface: #181a1f;
+  --surface-strong: #0f1116;
+  --accent: #f97316;
+  --accent-soft: rgba(249, 115, 22, 0.16);
+  --text: #fffcfe;
+  --muted: #ffc01e;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.14), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 192, 30, 0.08), transparent 24%),
+    var(--bg);
+  color: var(--text);
+}
+
+::selection {
+  background: rgba(249, 115, 22, 0.35);
+  color: #fff;
+}

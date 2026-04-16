@@ -1,58 +1,58 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Video, Dumbbell, CloudUpload, PlusCircle, CheckSquare, LogOut } from 'lucide-react';
-import { collection, addDoc, onSnapshot, query, where } from "firebase/firestore";
+import { LayoutDashboard, Video, CloudUpload, CheckSquare, LogOut, BarChart3, Search, ChevronRight, AlertCircle, LayoutGrid } from 'lucide-react';
 import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
-import { db, auth, provider } from "./firebase";
-import KanbanBoard from './KanbanBoard';
+import { auth, provider } from "./firebase";
+
+// SAARE COMPONENTS IMPORT KIYE HAIN 👇
 import MediaVault from './MediaVault';
 import LandingPage from './LandingPage';
 import HabitTracker from './HabitTracker';
+import SmartScript from './SmartScript'; // NAYA AI SCRIPT WRITER IMPORT KIYA 🤖
+import Dashboard from './Dashboard';
+import AnalyticsDashboard from './AnalyticsDashboard';
+import KanbanBoard from './KanbanBoard';
 
 function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [creatorLink, setCreatorLink] = useState('');
+  const [creatorLinkDraft, setCreatorLinkDraft] = useState('');
+  const [creatorLinkError, setCreatorLinkError] = useState('');
+  const [isSavingCreatorLink, setIsSavingCreatorLink] = useState(false);
 
-  const [exerciseName, setExerciseName] = useState('');
-  const [liftWeight, setLiftWeight] = useState('');
-  const [scriptTitle, setScriptTitle] = useState('');
-  const [scriptContent, setScriptContent] = useState('');
-  const [scriptsList, setScriptsList] = useState([]);
-  const [workoutsList, setWorkoutsList] = useState([]);
-
-  // Firebase Auth Listener
+  // 1. Check if user is logged in
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setCreatorLink('');
+      setCreatorLinkDraft('');
+      setCreatorLinkError('');
+      setIsSavingCreatorLink(false);
     });
     return () => unsubscribeAuth();
   }, []);
 
-  // Fetch only current user's data
   useEffect(() => {
-    if (!user) {
-      setScriptsList([]);
-      setWorkoutsList([]);
-      return; 
+    if (!user?.uid) return;
+
+    const storageKey = `creatorsync:last-youtube-channel:${user.uid}`;
+
+    try {
+      const savedLink = localStorage.getItem(storageKey);
+      if (savedLink) {
+        setCreatorLink(savedLink);
+        setCreatorLinkDraft(savedLink);
+      } else {
+        setCreatorLink('');
+        setCreatorLinkDraft('');
+      }
+    } catch {
+      setCreatorLink('');
+      setCreatorLinkDraft('');
     }
-
-    const scriptsQuery = query(collection(db, "videoScripts"), where("userId", "==", user.uid));
-    const unsubScripts = onSnapshot(scriptsQuery, (snapshot) => {
-      const fetchedScripts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setScriptsList(fetchedScripts);
-    });
-
-    const workoutsQuery = query(collection(db, "workoutLogs"), where("userId", "==", user.uid));
-    const unsubWorkouts = onSnapshot(workoutsQuery, (snapshot) => {
-      const fetchedWorkouts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setWorkoutsList(fetchedWorkouts);
-    });
-
-    return () => {
-      unsubScripts();
-      unsubWorkouts();
-    };
   }, [user]);
 
+  // 3. Login Function
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, provider);
@@ -62,174 +62,91 @@ function App() {
     }
   };
 
-  const handleSaveWorkout = async (e) => {
-    e.preventDefault();
-    if(!user) return;
+  const saveCreatorLink = async (event) => {
+    event.preventDefault();
+
+    const value = creatorLinkDraft.trim();
+    if (!value) {
+      setCreatorLinkError('Please paste your YouTube channel link or handle to continue.');
+      return;
+    }
+
+    if (!user?.uid) return;
+
+    setIsSavingCreatorLink(true);
+    setCreatorLinkError('');
+
     try {
-      await addDoc(collection(db, "workoutLogs"), {
-        exercise: exerciseName,
-        weight: liftWeight,
-        date: new Date().toLocaleDateString(),
-        userId: user.uid
-      });
-      setExerciseName('');
-      setLiftWeight('');
+      const storageKey = `creatorsync:last-youtube-channel:${user.uid}`;
+      localStorage.setItem(storageKey, value);
+      setCreatorLink(value);
     } catch (error) {
-      console.error(error);
+      console.error('Failed to save creator link:', error);
+      setCreatorLinkError('We could not save that link locally. Please try again.');
+      return;
+    } finally {
+      setIsSavingCreatorLink(false);
     }
   };
 
-  const handleSaveScript = async (e) => {
-    e.preventDefault();
-    if(!user) return;
-    try {
-      await addDoc(collection(db, "videoScripts"), {
-        title: scriptTitle,
-        content: scriptContent,
-        status: "Draft",
-        date: new Date().toLocaleDateString(),
-        userId: user.uid
-      });
-      setScriptTitle('');
-      setScriptContent('');
-    } catch (error) {
-      console.error(error);
-    }
-  };
+  // ==========================================
+  // RENDER TABS
+  // ==========================================
 
-  const renderDashboard = () => (
-    <div>
-      <header className="mb-8 border-b border-gray-700 pb-6">
-        <h2 className="text-3xl font-bold text-white">Creator Command Center</h2>
-        <p className="text-gray-400 mt-2">Manage your production pipeline. Drag and drop to sync instantly.</p>
-      </header>
-      <KanbanBoard user={user} />
-    </div>
-  );
+  const renderDashboard = () => <Dashboard user={user} />;
 
-  const renderScripts = () => (
-    <div>
-      <header className="mb-8 border-b border-gray-700 pb-6">
-        <h2 className="text-3xl font-bold text-white">Content Scripts</h2>
-        <p className="text-gray-400 mt-2">Write and push your vlog ideas directly to the cloud.</p>
-      </header>
-      <form onSubmit={handleSaveScript} className="bg-gray-800 p-6 rounded-xl border border-gray-700 max-w-2xl">
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-400 mb-2">Episode Title</label>
-          <input type="text" value={scriptTitle} onChange={(e) => setScriptTitle(e.target.value)} required className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white outline-none focus:border-blue-400" placeholder="e.g. Ep 36: Balancing College & Gym" />
-        </div>
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-400 mb-2">Script Content / Outline</label>
-          <textarea value={scriptContent} onChange={(e) => setScriptContent(e.target.value)} required rows="5" className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white outline-none focus:border-blue-400" placeholder="Intro hook, B-roll ideas, main topics..."></textarea>
-        </div>
-        <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
-          <PlusCircle size={18} /> Save Script to Cloud
-        </button>
-      </form>
+  // YAHAN HUMNE NAYA AI COMPONENT LAGA DIYA HAI 🤖✨
+  const renderScripts = () => <SmartScript user={user} />;
 
-      <div className="mt-12">
-        <h3 className="text-xl font-medium text-white mb-6 border-b border-gray-700 pb-2 inline-block">Your Script Vault</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {scriptsList.map((script) => (
-            <div key={script.id} className="bg-gray-800/50 p-6 rounded-2xl border border-gray-700/50 hover:border-blue-500/50 transition-colors">
-              <div className="flex justify-between items-start mb-3">
-                <h4 className="text-lg font-bold text-white leading-tight">{script.title}</h4>
-                <span className="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded-md font-medium">{script.status}</span>
-              </div>
-              <p className="text-gray-400 text-sm whitespace-pre-wrap mb-4 line-clamp-4">{script.content}</p>
-              <div className="text-xs text-gray-500">{script.date}</div>
-            </div>
-          ))}
-          {scriptsList.length === 0 && <p className="text-gray-500 italic">No scripts written yet.</p>}
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderTracker = () => (
-    <div>
-      <header className="mb-8 border-b border-gray-700 pb-6">
-        <h2 className="text-3xl font-bold text-white">Form & Lift Tracker</h2>
-        <p className="text-gray-400 mt-2">Log your daily lifts to track progressive overload.</p>
-      </header>
-      <form onSubmit={handleSaveWorkout} className="bg-gray-800 p-6 rounded-xl border border-gray-700 max-w-xl">
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-400 mb-2">Exercise Name</label>
-          <input type="text" value={exerciseName} onChange={(e) => setExerciseName(e.target.value)} required className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white outline-none focus:border-green-400" placeholder="e.g. Overhead Press (OHP)" />
-        </div>
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-400 mb-2">Weight / Details</label>
-          <input type="text" value={liftWeight} onChange={(e) => setLiftWeight(e.target.value)} required className="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-white outline-none focus:border-green-400" placeholder="e.g. 60kg for 8 reps" />
-        </div>
-        <button type="submit" className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
-          <PlusCircle size={18} /> Log Lift to Cloud
-        </button>
-      </form>
-
-      <div className="mt-12 max-w-xl">
-        <h3 className="text-xl font-medium text-white mb-6 border-b border-gray-700 pb-2 inline-block">Recent Lifts</h3>
-        <div className="space-y-4">
-          {workoutsList.map((workout) => (
-            <div key={workout.id} className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 flex justify-between items-center hover:bg-gray-800 transition-colors">
-              <div className="flex items-center gap-4">
-                <div className="bg-green-500/20 p-2 rounded-lg">
-                  <Dumbbell className="text-green-400" size={20} />
-                </div>
-                <div>
-                  <h4 className="text-md font-bold text-white">{workout.exercise}</h4>
-                  <p className="text-sm font-medium text-green-400">{workout.weight}</p>
-                </div>
-              </div>
-              <span className="text-xs text-gray-500 bg-gray-900 px-3 py-1 rounded-full">{workout.date}</span>
-            </div>
-          ))}
-          {workoutsList.length === 0 && <p className="text-gray-500 italic">No lifts logged yet.</p>}
-        </div>
-      </div>
-    </div>
-  );
+  const renderAnalytics = () => <AnalyticsDashboard user={user} />;
 
   const renderVault = () => <MediaVault user={user} />;
   const renderHabits = () => <HabitTracker user={user} />;
+  const renderPipeline = () => <KanbanBoard user={user} />;
+
+  const needsCreatorLink = user && !creatorLink;
 
   // Display Landing Page if not logged in
   if (!user) {
     return <LandingPage onLaunch={handleLogin} />;
   }
 
-  // Main Dashboard
+  // Main Dashboard Layout
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100 font-sans">
-      <aside className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col justify-between">
+    <div className="flex h-screen bg-[#111318] text-[#fffcfe] font-sans">
+      <aside className="w-64 bg-[#181a1f] border-r border-white/10 flex flex-col justify-between shadow-2xl shadow-black/30">
         <div>
           <div className="p-6">
-            <h1 className="text-2xl font-bold text-blue-400 tracking-wider">CreatorSync</h1>
+            <h1 className="text-2xl font-bold text-[#f97316] tracking-wider">CreatorSync</h1>
           </div>
           <nav className="flex-1 px-4 space-y-2">
-            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-white/10 text-white ring-1 ring-[#f97316]/30' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
               <LayoutDashboard size={20} /> <span className="font-medium">Dashboard</span>
             </button>
-            <button onClick={() => setActiveTab('scripts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'scripts' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('pipeline')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'pipeline' ? 'bg-white/10 text-white ring-1 ring-[#f97316]/30' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+              <LayoutGrid size={20} /> <span className="font-medium">Pipeline</span>
+            </button>
+            <button onClick={() => setActiveTab('analytics')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'analytics' ? 'bg-white/10 text-white ring-1 ring-[#f97316]/30' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+              <BarChart3 size={20} /> <span className="font-medium">Analytics</span>
+            </button>
+            <button onClick={() => setActiveTab('scripts')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'scripts' ? 'bg-white/10 text-white ring-1 ring-[#f97316]/30' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
               <Video size={20} /> <span className="font-medium">Video Scripts</span>
             </button>
-            <button onClick={() => setActiveTab('tracker')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'tracker' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}>
-              <Dumbbell size={20} /> <span className="font-medium">Form & Lift Tracker</span>
-            </button>
-            <button onClick={() => setActiveTab('habits')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'habits' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('habits')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'habits' ? 'bg-white/10 text-white ring-1 ring-[#f97316]/30' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
               <CheckSquare size={20} /> <span className="font-medium">Habit Tracker</span>
             </button>
-            <button onClick={() => setActiveTab('vault')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'vault' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}>
+            <button onClick={() => setActiveTab('vault')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'vault' ? 'bg-white/10 text-white ring-1 ring-[#f97316]/30' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
               <CloudUpload size={20} /> <span className="font-medium">Raw Footage Drop</span>
             </button>
           </nav>
         </div>
 
-        <div className="p-4 border-t border-gray-700 bg-gray-800/50">
+        <div className="p-4 border-t border-white/10 bg-black/20">
           <div className="flex items-center gap-3 mb-4">
             <img 
               src={user.photoURL || "https://via.placeholder.com/40"} 
               alt="Profile" 
-              className="w-10 h-10 rounded-full border border-gray-600"
+              className="w-10 h-10 rounded-full border border-white/15"
               referrerPolicy="no-referrer"
             />
             <div className="overflow-hidden">
@@ -239,7 +156,7 @@ function App() {
           </div>
           <button 
             onClick={() => signOut(auth)} 
-            className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 p-2 rounded-lg transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-[#f97316]/10 hover:bg-[#f97316]/20 text-[#ffc01e] p-2 rounded-lg transition-colors"
           >
             <LogOut size={16} /> <span className="text-sm font-medium">Sign Out</span>
           </button>
@@ -248,11 +165,65 @@ function App() {
 
       <main className="flex-1 p-8 overflow-y-auto">
         {activeTab === 'dashboard' && renderDashboard()}
+        {activeTab === 'pipeline' && renderPipeline()}
+        {activeTab === 'analytics' && renderAnalytics()}
         {activeTab === 'scripts' && renderScripts()}
-        {activeTab === 'tracker' && renderTracker()}
         {activeTab === 'habits' && renderHabits()}
         {activeTab === 'vault' && renderVault()} 
       </main>
+
+      {needsCreatorLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-[2rem] border border-white/10 bg-[#111318] p-6 shadow-2xl shadow-black/50">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f97316]/15 text-[#ffc01e]">
+                <Search className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Creator setup</p>
+                <h2 className="mt-1 text-2xl font-semibold text-white">Add your YouTube account link</h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                  Paste your channel link, handle, or channel ID so CreatorSync can load your analytics and personalize the workspace.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={saveCreatorLink} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-200">
+                  Creator YouTube link
+                </label>
+                <input
+                  type="text"
+                  value={creatorLinkDraft}
+                  onChange={(e) => setCreatorLinkDraft(e.target.value)}
+                  placeholder="https://youtube.com/@YourChannel or @YourHandle"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition placeholder:text-slate-500 focus:border-[#f97316] focus:ring-2 focus:ring-[#f97316]/30"
+                  autoFocus
+                />
+              </div>
+
+              {creatorLinkError && (
+                <div className="flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  <AlertCircle className="h-4 w-4" />
+                  {creatorLinkError}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="submit"
+                  disabled={isSavingCreatorLink}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#f97316] to-[#ffc01e] px-5 py-3 text-sm font-semibold text-[#111318] transition hover:from-[#ff8f33] hover:to-[#ffc94d] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {isSavingCreatorLink ? 'Saving...' : 'Continue'}
+                  {!isSavingCreatorLink && <ChevronRight size={16} />}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
